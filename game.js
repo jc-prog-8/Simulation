@@ -4,6 +4,9 @@
   const WORLD_H = 1600;
   const TRAFFIC_X = 1800;
   const LINK_RANGE = 190;
+  const MAX_RENDER_DPR = 2;
+  const UPGRADE_COST_MULTIPLIER = 1.8;
+  const MAX_DELTA_TIME = 0.05;
   const SPRITE_URL = "https://github.com/user-attachments/assets/34beca4b-c155-413e-9cbb-8121bd1b12b6";
 
   const BUILDING_TYPES = {
@@ -83,7 +86,7 @@
   const activeBuildings = (type) => state.buildings.filter((b) => b.type === type && b.connected);
 
   function resizeCanvas() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
     canvas.width = Math.floor(window.innerWidth * dpr);
     canvas.height = Math.floor(window.innerHeight * dpr);
     canvas.style.width = `${window.innerWidth}px`;
@@ -285,7 +288,7 @@
   function getUpgradeInfo(building) {
     const def = BUILDING_TYPES[building.type];
     if (building.level >= def.maxLevel) return { canUpgrade: false, cost: 0, benefit: "Max level reached." };
-    const cost = def.upgradeCost?.[building.level] ?? Math.round(def.cost * 1.8 * building.level);
+    const cost = def.upgradeCost?.[building.level] ?? Math.round(def.cost * UPGRADE_COST_MULTIPLIER * building.level);
     let benefit = "Improved output.";
     if (building.type === "pirate") benefit = building.level === 1 ? "Unlock medium ship raids. Better range and faster attacks." : "Unlock large ship raids. Better range and fastest attacks.";
     if (building.type === "market") benefit = "Higher merchant spending and attraction.";
@@ -767,7 +770,7 @@
   }
 
   function loop(ts) {
-    const dt = clamp((ts - lastTs) / 1000, 0, 0.05);
+    const dt = clamp((ts - lastTs) / 1000, 0, MAX_DELTA_TIME);
     lastTs = ts;
     if (!isPaused()) {
       updateSimulation(dt);

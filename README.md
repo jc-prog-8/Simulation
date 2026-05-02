@@ -4,7 +4,9 @@ Mobile-friendly browser management sim prototype built with HTML/CSS/JavaScript.
 
 ### Run
 
-Open `/home/runner/work/Simulation/Simulation/index.html` in a browser.
+Open `./index.html` in a browser.
+
+> Note: the game loads sprites from the provided external GitHub asset URL; if CORS blocks that URL in your environment, the game automatically falls back to simple vector shapes.
 
 ### Controls
 

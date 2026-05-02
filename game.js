@@ -221,7 +221,6 @@
   }
 
   function openMenu() {
-    clearPlacementMode();
     ui.menuOpen = true;
     menuOverlay.classList.remove("hidden");
     renderBuildOptions();
@@ -815,7 +814,7 @@
       ctx.moveTo(x, y - 4.5);
       ctx.lineTo(x, y + 4.5);
       ctx.moveTo(x - 3, y);
-      ctx.quadraticCurveTo(x, -0.5 + y, x + 3, y + 2);
+      ctx.quadraticCurveTo(x, y - 0.5, x + 3, y + 2);
       ctx.stroke();
       return;
     }

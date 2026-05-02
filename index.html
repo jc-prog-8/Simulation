@@ -15,6 +15,15 @@
         <span id="gold-value">0</span>
       </div>
 
+      <div id="placement-indicator" class="panel hidden" aria-live="polite">
+        <img id="placement-icon" alt="" />
+        <div class="placement-copy">
+          <strong id="placement-name"></strong>
+          <span id="placement-hint"></span>
+        </div>
+        <button id="placement-cancel" type="button">Cancel</button>
+      </div>
+
       <div id="ticker" class="panel"></div>
 
       <button id="menu-button" class="ring-button" aria-label="Open menu">◉</button>
@@ -29,15 +38,18 @@
           <section id="build-tab" class="tab-panel">
             <h2>Build</h2>
             <div id="build-options" class="cards"></div>
-            <button id="close-menu" class="close-btn">Resume</button>
           </section>
 
           <section id="stats-tab" class="tab-panel hidden">
             <h2>Statistics</h2>
             <ul id="stats-list"></ul>
             <canvas id="stats-graph" width="720" height="240" aria-label="Statistics graph over time"></canvas>
-            <button id="close-menu-2" class="close-btn">Resume</button>
           </section>
+
+          <div class="menu-footer">
+            <button id="reset-game" class="danger-btn" type="button">New Game</button>
+            <button id="close-menu" class="close-btn" type="button">Resume</button>
+          </div>
         </div>
       </div>
 

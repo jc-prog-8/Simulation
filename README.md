@@ -6,13 +6,14 @@ Mobile-friendly browser management sim prototype built with HTML/CSS/JavaScript.
 
 Open `./index.html` in a browser.
 
-> Note: the game uses in-code custom canvas sprites for all core entities.
+> Note: the game uses extracted PNG sprites from the included sprite sheet for ships, structures, and reaction icons.
 
 ### Controls
 
 - Tap a building to open its full-screen upgrade/details panel (simulation pauses)
 - Tap ring button (bottom-left) to open full-screen Build/Statistics menu (simulation pauses)
 - Choose a build option, then tap the map to place
+- Tap an existing structure while placement is armed to inspect or upgrade it instead of placing over it
 - Drag to pan
 - Pinch (or wheel on desktop) to zoom
 
@@ -22,7 +23,7 @@ Open `./index.html` in a browser.
 - Gold economy with top-right HUD display
 - Pirate Base auto-raiding with 3 upgrade levels and ship-class gating
 - Quantum route connectivity system (buildings only function when connected)
-- Dock + Market merchant loop with shopping and flee behavior
+- Left-side merchant arrivals that roam toward connected markets, with optional trade beacons improving traffic
 - Mecha-Kraken spawn/roam/despawn and traffic suppression
 - Monster Hunter Base automatic kraken response
 - Bottom ticker hints
@@ -30,4 +31,4 @@ Open `./index.html` in a browser.
 - Full-screen paused menus for build/statistics and upgrades
 - Icon thought bubbles for ships/merchants/krakens/hunters/buildings
 - Local save/load via `localStorage`
-- Uses custom canvas-rendered sprites for core entity rendering
+- Uses extracted sprite-sheet PNGs for core entity rendering and reaction bubbles

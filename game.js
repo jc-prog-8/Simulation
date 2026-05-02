@@ -8,13 +8,14 @@
   const MAX_ZOOM = 1.8;
   const UPGRADE_COST_MULTIPLIER = 1.8;
   const MAX_DELTA_TIME = 0.05;
-  const THOUGHT_SIZE = 50;
+  const THOUGHT_BUBBLE_SIZE = 50;
+  const THOUGHT_FALLBACK_FONT = "bold 16px sans-serif";
   const SHIP_SPRITE_ROTATION = Math.PI / 2;
 
   const BUILDING_TYPES = {
     route: { id: "route", name: "Quantum Route Node", role: "Extends station network connectivity.", cost: 20, maxLevel: 1, radius: 12, connectable: true, color: "#38d7ff" },
     pirate: { id: "pirate", name: "Pirate Base", role: "Auto-raids nearby traffic when connected.", cost: 120, maxLevel: 3, radius: 42, connectable: true, color: "#9143ff", upgradeCost: [0, 160, 330] },
-    dock: { id: "dock", name: "Trade Beacon", role: "Attracts extra merchants and helps them find your markets.", cost: 90, maxLevel: 2, radius: 46, connectable: true, color: "#2d8cff", upgradeCost: [0, 120] },
+    dock: { id: "dock", name: "Trade Beacon", role: "Attracts extra merchants to connected markets.", cost: 90, maxLevel: 2, radius: 46, connectable: true, color: "#2d8cff", upgradeCost: [0, 120] },
     market: { id: "market", name: "Market Stall", role: "Generates gold when merchants shop.", cost: 140, maxLevel: 3, radius: 36, connectable: true, color: "#52e0ff", upgradeCost: [0, 170, 360] },
     hunter: { id: "hunter", name: "Monster Hunter Base", role: "Dispatches hunters to remove Mecha-Krakens.", cost: 210, maxLevel: 3, radius: 42, connectable: true, color: "#ff6f8f", upgradeCost: [0, 240, 420] },
   };
@@ -424,8 +425,8 @@
 
   function spawnMerchant() {
     const markets = activeBuildings("market");
+    if (!markets.length) return;
     const target = markets[Math.floor(Math.random() * markets.length)];
-    if (!target) return;
     state.merchants.push({
       id: nextId("merchant"),
       x: -80,
@@ -437,6 +438,7 @@
       heading: 0,
       wanderPhase: rand(0, Math.PI * 2),
       retargetTimer: rand(1.2, 2.6),
+      exitY: null,
       thought: "bubbleQuestion",
       thoughtTimer: 1.2,
     });
@@ -721,10 +723,7 @@
         const wobble = Math.sin(performance.now() * 0.002 + m.wanderPhase) * 48;
         target = { x: activeShop.x, y: activeShop.y + wobble };
       }
-      if (m.state === "leaving") {
-        if (typeof m.exitY !== "number") m.exitY = clamp(m.y + rand(-90, 90), 90, WORLD_H - 90);
-        target = { x: WORLD_W + 120, y: m.exitY };
-      }
+      if (m.state === "leaving") target = { x: WORLD_W + 120, y: m.exitY };
       if (m.state === "flee") target = { x: -140, y: clamp(m.y - 120, 80, WORLD_H - 80) };
       if (m.state === "shopping") {
         m.timer -= dt;
@@ -734,6 +733,7 @@
           state.stats.merchantGold += spend;
           state.stats.merchantVisits += 1;
           m.state = "leaving";
+          m.exitY = clamp(m.y + rand(-90, 90), 90, WORLD_H - 90);
           m.thought = "bubbleMoney";
           m.thoughtTimer = 1;
         }
@@ -773,7 +773,7 @@
     const p = worldToScreen(entity.x, entity.y + yOffset);
     const img = getSprite(icon);
     if (img) {
-      const scale = THOUGHT_SIZE / img.height;
+      const scale = THOUGHT_BUBBLE_SIZE / img.height;
       const w = img.width * scale;
       const h = img.height * scale;
       ctx.save();
@@ -790,7 +790,7 @@
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = "#0f1d45";
-    ctx.font = "bold 16px sans-serif";
+    ctx.font = THOUGHT_FALLBACK_FONT;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(THOUGHT_FALLBACK_TEXT[icon] || "!", p.x, p.y + 0.5);

@@ -67,7 +67,7 @@
     krakens: [],
     hunters: [],
     stats: { raidGold: 0, merchantGold: 0, raids: 0, merchantVisits: 0, merchantFlee: 0, krakenIncidents: 0, shipsMissed: 0 },
-    timers: { ship: 0, merchant: 0, kraken: 24, save: 0 },
+    timers: { ship: 0, merchant: 0, kraken: 0, save: 0 },
   };
 
   const camera = { x: 0, y: 0, zoom: 1, dragging: false, dragStartX: 0, dragStartY: 0, startX: 0, startY: 0 };
@@ -807,6 +807,7 @@
     resizeCanvas();
     initEvents();
     if (!loadGame()) spawnInitialBuildings();
+    if (!state.timers.kraken || state.timers.kraken <= 0) state.timers.kraken = rand(32, 55);
     updateConnectivity();
     setTab("build");
     setTicker(TICKER_MESSAGES[0]);

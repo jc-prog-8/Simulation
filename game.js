@@ -201,7 +201,7 @@
 
   const trafficSuppression = () => clamp(1 - state.krakens.length * 0.2, 0.42, 1);
   const shipClassIndex = (id) => (id === "small" ? 1 : id === "medium" ? 2 : 3);
-  const pirateCooldown = (base) => clamp(3.2 - base.level * 0.75, 1, 3);
+  const pirateCooldown = (base) => clamp(3.2 - base.level * 0.75, 1, 3.2);
   const pirateRange = (base) => 220 + base.level * 55;
   const krakenNear = (pos, r) => state.krakens.some((k) => dist(k, pos) < r);
 
@@ -807,7 +807,7 @@
     resizeCanvas();
     initEvents();
     if (!loadGame()) spawnInitialBuildings();
-    if (!state.timers.kraken || state.timers.kraken <= 0) state.timers.kraken = rand(32, 55);
+    if (state.timers.kraken <= 0) state.timers.kraken = rand(32, 55);
     updateConnectivity();
     setTab("build");
     setTicker(TICKER_MESSAGES[0]);

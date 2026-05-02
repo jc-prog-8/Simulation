@@ -10,9 +10,8 @@
   const MIN_ZOOM = 0.18;
   const UPGRADE_COST_MULTIPLIER = 1.8;
   const MAX_DELTA_TIME = 0.05;
-  const THOUGHT_BUBBLE_SIZE = 50;
-  const THOUGHT_BUBBLE_FALLBACK_RADIUS = 18;
-  const THOUGHT_FALLBACK_FONT = "bold 16px sans-serif";
+  const THOUGHT_BUBBLE_RADIUS = 18;
+  const THOUGHT_OUTLINE = "#1d356f";
   const SHIP_SPRITE_ROTATION = Math.PI / 2;
   const MERCHANT_WOBBLE_FREQUENCY = 0.002;
   const MERCHANT_WOBBLE_AMPLITUDE = 48;
@@ -54,27 +53,18 @@
     hunter: "assets/sprites/hunter-base.png",
     route: "assets/sprites/route-node.png",
     kraken: "assets/sprites/kraken.png",
-    bubbleAlert: "assets/sprites/bubble-alert.png",
-    bubbleWarning: "assets/sprites/bubble-warning.png",
-    bubbleMoney: "assets/sprites/bubble-money.png",
-    bubbleShield: "assets/sprites/bubble-shield.png",
-    bubbleQuestion: "assets/sprites/bubble-question.png",
-    bubbleTarget: "assets/sprites/bubble-target.png",
-    bubbleHappy: "assets/sprites/bubble-happy.png",
-    bubbleRunning: "assets/sprites/bubble-running.png",
-    bubbleSad: "assets/sprites/bubble-sad.png",
   };
 
-  const THOUGHT_FALLBACK_TEXT = {
-    bubbleAlert: "!",
-    bubbleWarning: "!",
-    bubbleMoney: "$",
-    bubbleShield: "S",
-    bubbleQuestion: "?",
-    bubbleTarget: "X",
-    bubbleHappy: ":)",
-    bubbleRunning: ">",
-    bubbleSad: ":(",
+  const THOUGHT_STYLES = {
+    bubbleAlert: { accent: "#ff5b7f", glyph: "danger" },
+    bubbleWarning: { accent: "#ffb347", glyph: "impact" },
+    bubbleMoney: { accent: "#ffd548", glyph: "coin" },
+    bubbleShield: { accent: "#74d7ff", glyph: "shield" },
+    bubbleQuestion: { accent: "#77d8ff", glyph: "search" },
+    bubbleTarget: { accent: "#ff7de0", glyph: "target" },
+    bubbleHappy: { accent: "#68f3be", glyph: "spark" },
+    bubbleRunning: { accent: "#87b7ff", glyph: "flee" },
+    bubbleSad: { accent: "#8ea5d9", glyph: "sad" },
   };
 
   const canvas = document.getElementById("game-canvas");
@@ -87,11 +77,6 @@
   const buildOptionsEl = document.getElementById("build-options");
   const statsListEl = document.getElementById("stats-list");
   const statsGraphEl = document.getElementById("stats-graph");
-  const placementIndicatorEl = document.getElementById("placement-indicator");
-  const placementIconEl = document.getElementById("placement-icon");
-  const placementNameEl = document.getElementById("placement-name");
-  const placementHintEl = document.getElementById("placement-hint");
-  const placementCancelEl = document.getElementById("placement-cancel");
   const spriteCache = new Map();
   let spriteLoadFailed = false;
 
@@ -170,34 +155,12 @@
     clampCamera();
   }
 
-  function spriteIdForBuilding(typeId) {
-    if (typeId === "route") return "route";
-    if (typeId === "pirate") return "pirate";
-    if (typeId === "dock") return "dock";
-    if (typeId === "market") return "market";
-    if (typeId === "hunter") return "hunter";
-    return null;
-  }
-
-  function updatePlacementIndicator() {
-    const typeId = ui.placementMode;
-    const def = typeId ? BUILDING_TYPES[typeId] : null;
-    placementIndicatorEl.classList.toggle("hidden", !def);
-    if (!def) return;
-    placementNameEl.textContent = `${def.name} ready`;
-    placementHintEl.textContent = "Tap open space to place it, or tap a structure to inspect and upgrade it.";
-    const spriteId = spriteIdForBuilding(typeId);
-    placementIconEl.src = spriteId ? SPRITE_FILES[spriteId] : "";
-  }
-
   function setPlacementMode(typeId) {
     ui.placementMode = typeId;
-    updatePlacementIndicator();
   }
 
   function clearPlacementMode() {
     ui.placementMode = null;
-    updatePlacementIndicator();
   }
 
   function resetGame(preserveMenu = false) {
@@ -258,6 +221,7 @@
   }
 
   function openMenu() {
+    clearPlacementMode();
     ui.menuOpen = true;
     menuOverlay.classList.remove("hidden");
     renderBuildOptions();
@@ -559,10 +523,10 @@
     }
     if (!candidate) return;
     candidate.targeted = true;
-    candidate.thought = "bubbleAlert";
+    candidate.thought = "bubbleTarget";
     candidate.thoughtTimer = 0.8;
     base.cooldown = pirateCooldown(base);
-    base.thought = "bubbleWarning";
+    base.thought = "bubbleAlert";
     base.thoughtTimer = 0.7;
     state.raiders.push({
       id: nextId("raider"),
@@ -573,7 +537,7 @@
       speed: 180 + base.level * 26,
       reward: candidate.reward + (base.level - 1) * 5,
       state: "toTarget",
-      thought: "bubbleAlert",
+      thought: "bubbleTarget",
       thoughtTimer: 0.8,
     });
   }
@@ -611,7 +575,7 @@
       if (ship.thoughtTimer > 0) ship.thoughtTimer -= dt;
       if (ship.thoughtTimer <= 0) ship.thought = null;
       if (krakenNear(ship, 220) && Math.random() < 0.007) {
-        ship.thought = "bubbleWarning";
+        ship.thought = "bubbleAlert";
         ship.thoughtTimer = 0.8;
       }
       if (ship.y > WORLD_H + 80) {
@@ -784,29 +748,156 @@
   function drawThought(entity, icon, yOffset = -42) {
     if (!icon) return;
     const p = worldToScreen(entity.x, entity.y + yOffset);
-    const img = getSprite(icon);
-    if (img) {
-      const scale = THOUGHT_BUBBLE_SIZE / img.height;
-      const w = img.width * scale;
-      const h = img.height * scale;
-      ctx.save();
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, p.x - w / 2, p.y - h / 2, w, h);
-      ctx.restore();
-      return;
-    }
-    ctx.fillStyle = "#eaf6ff";
+    const style = THOUGHT_STYLES[icon] || THOUGHT_STYLES.bubbleAlert;
+    const radius = THOUGHT_BUBBLE_RADIUS;
+    ctx.save();
+    ctx.fillStyle = "#eef7ff";
     ctx.beginPath();
-    ctx.arc(p.x, p.y, THOUGHT_BUBBLE_FALLBACK_RADIUS, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#1f3875";
+    ctx.strokeStyle = THOUGHT_OUTLINE;
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = "#0f1d45";
-    ctx.font = THOUGHT_FALLBACK_FONT;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(THOUGHT_FALLBACK_TEXT[icon] || "!", p.x, p.y + 0.5);
+    ctx.fillStyle = "#eef7ff";
+    ctx.beginPath();
+    ctx.arc(p.x - radius * 0.8, p.y + radius * 0.75, 4, 0, Math.PI * 2);
+    ctx.arc(p.x - radius * 1.2, p.y + radius * 1.2, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = style.accent;
+    ctx.fillStyle = style.accent;
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    drawThoughtGlyph(style.glyph, p.x, p.y);
+    ctx.restore();
+  }
+
+  function drawThoughtGlyph(glyph, x, y) {
+    if (glyph === "danger") {
+      ctx.beginPath();
+      ctx.moveTo(x, y - 9);
+      ctx.lineTo(x + 8, y + 8);
+      ctx.lineTo(x - 8, y + 8);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y - 3);
+      ctx.lineTo(x, y + 3);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y + 6.5, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (glyph === "impact") {
+      const points = 8;
+      ctx.beginPath();
+      for (let i = 0; i < points * 2; i += 1) {
+        const angle = (Math.PI / points) * i - Math.PI / 2;
+        const r = i % 2 === 0 ? 8.5 : 4.8;
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      return;
+    }
+    if (glyph === "coin") {
+      ctx.beginPath();
+      ctx.arc(x, y, 8.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - 2.5, y - 4.5);
+      ctx.lineTo(x + 2.5, y - 4.5);
+      ctx.moveTo(x, y - 4.5);
+      ctx.lineTo(x, y + 4.5);
+      ctx.moveTo(x - 3, y);
+      ctx.quadraticCurveTo(x, -0.5 + y, x + 3, y + 2);
+      ctx.stroke();
+      return;
+    }
+    if (glyph === "shield") {
+      ctx.beginPath();
+      ctx.moveTo(x, y - 9);
+      ctx.lineTo(x + 7, y - 6);
+      ctx.lineTo(x + 6, y + 2);
+      ctx.lineTo(x, y + 9);
+      ctx.lineTo(x - 6, y + 2);
+      ctx.lineTo(x - 7, y - 6);
+      ctx.closePath();
+      ctx.stroke();
+      return;
+    }
+    if (glyph === "search") {
+      ctx.beginPath();
+      ctx.arc(x - 1.5, y - 1.5, 5.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x + 3.5, y + 3.5);
+      ctx.lineTo(x + 8.5, y + 8.5);
+      ctx.stroke();
+      return;
+    }
+    if (glyph === "target") {
+      ctx.beginPath();
+      ctx.arc(x, y, 8.5, 0, Math.PI * 2);
+      ctx.moveTo(x - 11, y);
+      ctx.lineTo(x - 4, y);
+      ctx.moveTo(x + 4, y);
+      ctx.lineTo(x + 11, y);
+      ctx.moveTo(x, y - 11);
+      ctx.lineTo(x, y - 4);
+      ctx.moveTo(x, y + 4);
+      ctx.lineTo(x, y + 11);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (glyph === "spark") {
+      ctx.beginPath();
+      ctx.moveTo(x, y - 9);
+      ctx.lineTo(x + 2.6, y - 2.6);
+      ctx.lineTo(x + 9, y);
+      ctx.lineTo(x + 2.6, y + 2.6);
+      ctx.lineTo(x, y + 9);
+      ctx.lineTo(x - 2.6, y + 2.6);
+      ctx.lineTo(x - 9, y);
+      ctx.lineTo(x - 2.6, y - 2.6);
+      ctx.closePath();
+      ctx.stroke();
+      return;
+    }
+    if (glyph === "flee") {
+      ctx.beginPath();
+      ctx.moveTo(x - 8.5, y);
+      ctx.lineTo(x + 3.5, y);
+      ctx.moveTo(x - 8.5, y);
+      ctx.lineTo(x - 3.5, y - 4.5);
+      ctx.moveTo(x - 8.5, y);
+      ctx.lineTo(x - 3.5, y + 4.5);
+      ctx.moveTo(x + 5.5, y - 5);
+      ctx.lineTo(x + 8.5, y - 2);
+      ctx.moveTo(x + 5.5, y + 1);
+      ctx.lineTo(x + 8.5, y + 4);
+      ctx.stroke();
+      return;
+    }
+    if (glyph === "sad") {
+      ctx.beginPath();
+      ctx.arc(x, y, 8.5, 0, Math.PI * 2);
+      ctx.moveTo(x - 3, y - 2);
+      ctx.lineTo(x - 3, y - 1.5);
+      ctx.moveTo(x + 3, y - 2);
+      ctx.lineTo(x + 3, y - 1.5);
+      ctx.moveTo(x - 4, y + 4);
+      ctx.quadraticCurveTo(x, y + 1, x + 4, y + 4);
+      ctx.stroke();
+    }
   }
 
   function drawSpriteOrFallback(type, x, y, w, h, fallbackColor, rotation = 0, alpha = 1) {
@@ -957,7 +1048,7 @@
       ctx.beginPath();
       ctx.arc(p.x, p.y, k.radius * camera.zoom, 0, Math.PI * 2);
       ctx.stroke();
-      drawThought(k, k.thought || "bubbleWarning", -72);
+      drawThought(k, k.thought || "bubbleAlert", -72);
     }
   }
 
@@ -1164,7 +1255,6 @@
     document.getElementById("close-menu").addEventListener("click", closeMenu);
     document.getElementById("upgrade-close").addEventListener("click", closeUpgrade);
     document.getElementById("upgrade-buy").addEventListener("click", upgradeSelected);
-    placementCancelEl.addEventListener("click", clearPlacementMode);
     document.getElementById("reset-game").addEventListener("click", () => {
       if (!window.confirm("Start a new game? This clears the current save.")) return;
       resetGame(true);
@@ -1191,7 +1281,6 @@
     recordStatsHistory(0, true);
     if (state.timers.kraken <= 0) state.timers.kraken = rand(32, 55);
     updateConnectivity();
-    updatePlacementIndicator();
     setTab("build");
     setTicker(spriteLoadFailed ? "Some sprites failed to load. Gameplay is still available with fallbacks." : TICKER_MESSAGES[0]);
     requestAnimationFrame(loop);

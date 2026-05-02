@@ -1,5 +1,5 @@
 (() => {
-  const SAVE_KEY = "space_pirates_save_v1";
+  const SAVE_KEY = "space_pirates_save_v2";
   const WORLD_W = 2200;
   const WORLD_H = 1600;
   const TRAFFIC_X = 1800;
@@ -7,7 +7,6 @@
   const MAX_RENDER_DPR = 2;
   const UPGRADE_COST_MULTIPLIER = 1.8;
   const MAX_DELTA_TIME = 0.05;
-  const SPRITE_URL = "https://jc-prog-8.github.io/Simulation/sprites.png";
 
   const BUILDING_TYPES = {
     route: { id: "route", name: "Quantum Route Node", role: "Extends station network connectivity.", cost: 20, maxLevel: 1, radius: 12, connectable: true, color: "#38d7ff" },
@@ -41,21 +40,7 @@
   const upgradeOverlay = document.getElementById("overlay-upgrade");
   const buildOptionsEl = document.getElementById("build-options");
   const statsListEl = document.getElementById("stats-list");
-
-  const sprite = new Image();
-  sprite.crossOrigin = "anonymous";
-  sprite.src = SPRITE_URL;
-
-  const spriteMap = {
-    shipSmall: { sx: 20, sy: 70, sw: 110, sh: 70 },
-    shipMedium: { sx: 130, sy: 40, sw: 170, sh: 90 },
-    shipLarge: { sx: 300, sy: 35, sw: 250, sh: 100 },
-    pirate: { sx: 230, sy: 285, sw: 150, sh: 100 },
-    market: { sx: 25, sy: 386, sw: 130, sh: 110 },
-    hunter: { sx: 310, sy: 386, sw: 165, sh: 100 },
-    dock: { sx: 530, sy: 385, sw: 190, sh: 110 },
-    kraken: { sx: 510, sy: 50, sw: 430, sh: 420 },
-  };
+  const statsGraphEl = document.getElementById("stats-graph");
 
   const ui = { menuOpen: false, tab: "build", selected: null, placementMode: null, tickerIndex: 0, tickerTimer: 0 };
 
@@ -66,7 +51,10 @@
     merchants: [],
     krakens: [],
     hunters: [],
+    raiders: [],
     stats: { raidGold: 0, merchantGold: 0, raids: 0, merchantVisits: 0, merchantFlee: 0, krakenIncidents: 0, shipsMissed: 0 },
+    statsHistory: [],
+    elapsed: 0,
     timers: { ship: 0, merchant: 0, kraken: 0, save: 0 },
   };
 
@@ -96,10 +84,6 @@
 
   function spawnInitialBuildings() {
     if (state.buildings.length) return;
-    placeBuilding("route", 900, 820, true);
-    placeBuilding("pirate", 1536, 700, true);
-    placeBuilding("dock", 1080, 920, true);
-    placeBuilding("market", 980, 760, true);
   }
 
   function setTicker(msg) {
@@ -179,6 +163,94 @@
       ["Active krakens", state.krakens.length],
     ];
     statsListEl.innerHTML = lines.map(([k, v]) => `<li>${k}: <strong>${v}</strong></li>`).join("");
+    drawStatsGraph();
+  }
+
+  function recordStatsHistory(dt, force = false) {
+    state.elapsed += dt;
+    const interval = 1.5;
+    if (!force && state.elapsed < interval) return;
+    const sample = {
+      t: (state.statsHistory[state.statsHistory.length - 1]?.t ?? 0) + state.elapsed,
+      gold: state.gold,
+      raidGold: state.stats.raidGold,
+      merchantGold: state.stats.merchantGold,
+    };
+    state.statsHistory.push(sample);
+    if (state.statsHistory.length > 160) state.statsHistory.shift();
+    state.elapsed = 0;
+  }
+
+  function drawStatsGraph() {
+    if (!statsGraphEl) return;
+    const gctx = statsGraphEl.getContext("2d");
+    const w = statsGraphEl.width;
+    const h = statsGraphEl.height;
+    gctx.clearRect(0, 0, w, h);
+    gctx.fillStyle = "#0a1840";
+    gctx.fillRect(0, 0, w, h);
+
+    const hist = state.statsHistory;
+    if (hist.length < 2) {
+      gctx.fillStyle = "#9db9ff";
+      gctx.font = "14px sans-serif";
+      gctx.textAlign = "center";
+      gctx.textBaseline = "middle";
+      gctx.fillText("Graphs will appear as the simulation runs.", w / 2, h / 2);
+      return;
+    }
+
+    const left = 42;
+    const right = 10;
+    const top = 12;
+    const bottom = 26;
+    const pw = w - left - right;
+    const ph = h - top - bottom;
+    const maxY = Math.max(1, ...hist.map((p) => Math.max(p.gold, p.raidGold, p.merchantGold)));
+
+    gctx.strokeStyle = "rgba(146,175,255,0.3)";
+    gctx.lineWidth = 1;
+    gctx.beginPath();
+    gctx.moveTo(left, top);
+    gctx.lineTo(left, h - bottom);
+    gctx.lineTo(w - right, h - bottom);
+    gctx.stroke();
+
+    gctx.fillStyle = "#8fb0ff";
+    gctx.font = "11px sans-serif";
+    gctx.textAlign = "right";
+    gctx.fillText("0", left - 6, h - bottom);
+    gctx.fillText(Math.floor(maxY).toLocaleString(), left - 6, top + 2);
+
+    const drawSeries = (key, color) => {
+      gctx.strokeStyle = color;
+      gctx.lineWidth = 2;
+      gctx.beginPath();
+      for (let i = 0; i < hist.length; i += 1) {
+        const p = hist[i];
+        const x = left + (i / (hist.length - 1)) * pw;
+        const y = top + (1 - p[key] / maxY) * ph;
+        if (i === 0) gctx.moveTo(x, y);
+        else gctx.lineTo(x, y);
+      }
+      gctx.stroke();
+    };
+
+    drawSeries("gold", "#ffd548");
+    drawSeries("raidGold", "#c084ff");
+    drawSeries("merchantGold", "#5de7ff");
+
+    const legends = [["Gold", "#ffd548"], ["Raid", "#c084ff"], ["Merchant", "#5de7ff"]];
+    gctx.font = "11px sans-serif";
+    gctx.textAlign = "left";
+    legends.forEach(([name, color], i) => {
+      const lx = left + i * 110;
+      const ly = h - 10;
+      gctx.fillStyle = color;
+      gctx.fillRect(lx, ly - 8, 10, 3);
+      gctx.fillStyle = "#dbe8ff";
+      gctx.fillText(name, lx + 14, ly - 2);
+    });
   }
 
   function cycleTicker(dt) {
@@ -215,6 +287,7 @@
       speed: cls.speed,
       reward: cls.reward,
       raided: false,
+      targeted: false,
       thought: null,
       thoughtTimer: 0,
     });
@@ -333,7 +406,7 @@
     let candidate = null;
     let best = Infinity;
     for (const ship of state.ships) {
-      if (ship.raided || shipClassIndex(ship.classId) > maxClass) continue;
+      if (ship.raided || ship.targeted || shipClassIndex(ship.classId) > maxClass) continue;
       const d = dist(base, ship);
       if (d <= pirateRange(base) && d < best) {
         candidate = ship;
@@ -341,19 +414,28 @@
       }
     }
     if (!candidate) return;
-    candidate.raided = true;
-    candidate.thought = "☠";
+    candidate.targeted = true;
+    candidate.thought = "❗";
     candidate.thoughtTimer = 0.8;
     base.cooldown = pirateCooldown(base);
     base.thought = "⚡";
     base.thoughtTimer = 0.7;
-    const reward = candidate.reward + (base.level - 1) * 5;
-    state.gold += reward;
-    state.stats.raidGold += reward;
-    state.stats.raids += 1;
+    state.raiders.push({
+      id: nextId("raider"),
+      x: base.x,
+      y: base.y,
+      originId: base.id,
+      targetId: candidate.id,
+      speed: 180 + base.level * 26,
+      reward: candidate.reward + (base.level - 1) * 5,
+      state: "toTarget",
+      thought: "☠",
+      thoughtTimer: 0.8,
+    });
   }
 
   function updateSimulation(dt) {
+    recordStatsHistory(dt);
     for (const b of state.buildings) {
       b.cooldown = Math.max(0, b.cooldown - dt);
       if (b.thoughtTimer > 0) b.thoughtTimer -= dt;
@@ -396,6 +478,51 @@
     });
 
     for (const base of activeBuildings("pirate")) attackShip(base);
+
+    state.raiders = state.raiders.filter((r) => {
+      const origin = state.buildings.find((b) => b.id === r.originId);
+      if (!origin) {
+        const target = state.ships.find((s) => s.id === r.targetId);
+        if (target) target.targeted = false;
+        return false;
+      }
+      if (r.state === "toTarget") {
+        const target = state.ships.find((s) => s.id === r.targetId);
+        if (!target || target.raided) {
+          if (target) target.targeted = false;
+          r.state = "return";
+        } else {
+          const dx = target.x - r.x;
+          const dy = target.y - r.y;
+          const d = Math.hypot(dx, dy) || 1;
+          r.x += (dx / d) * r.speed * dt;
+          r.y += (dy / d) * r.speed * dt;
+          if (d < 20) {
+            target.raided = true;
+            target.targeted = false;
+            target.thought = "☠";
+            target.thoughtTimer = 0.8;
+            state.gold += r.reward;
+            state.stats.raidGold += r.reward;
+            state.stats.raids += 1;
+            r.state = "return";
+            r.thought = "💰";
+            r.thoughtTimer = 0.7;
+          }
+        }
+      }
+      if (r.state === "return") {
+        const dx = origin.x - r.x;
+        const dy = origin.y - r.y;
+        const d = Math.hypot(dx, dy) || 1;
+        r.x += (dx / d) * r.speed * dt;
+        r.y += (dy / d) * r.speed * dt;
+        if (d < 14) return false;
+      }
+      if (r.thoughtTimer > 0) r.thoughtTimer -= dt;
+      if (r.thoughtTimer <= 0) r.thought = null;
+      return true;
+    });
 
     state.krakens = state.krakens.filter((k) => {
       k.ttl -= dt;
@@ -511,13 +638,96 @@
 
   function drawSpriteOrFallback(type, x, y, w, h, fallbackColor) {
     const p = worldToScreen(x, y);
-    if (sprite.complete && sprite.naturalWidth > 0 && spriteMap[type]) {
-      const s = spriteMap[type];
-      ctx.drawImage(sprite, s.sx, s.sy, s.sw, s.sh, p.x - w / 2, p.y - h / 2, w, h);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(w / 100, h / 100);
+
+    if (type === "shipSmall" || type === "shipMedium" || type === "shipLarge") {
+      const hullColor = type === "shipSmall" ? "#5aa8ff" : type === "shipMedium" ? "#9e74ff" : "#ffc86c";
+      ctx.fillStyle = hullColor;
+      ctx.beginPath();
+      ctx.moveTo(44, -26);
+      ctx.lineTo(-40, -18);
+      ctx.lineTo(-48, 0);
+      ctx.lineTo(-40, 18);
+      ctx.lineTo(44, 26);
+      ctx.lineTo(50, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(238, 248, 255, 0.9)";
+      ctx.beginPath();
+      ctx.ellipse(10, 0, 14, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(70, 20, 110, 0.35)";
+      ctx.fillRect(-28, -3, 30, 6);
+    } else if (type === "pirate") {
+      ctx.fillStyle = "#8e43ff";
+      ctx.fillRect(-42, -24, 84, 48);
+      ctx.fillStyle = "#d9a3ff";
+      ctx.beginPath();
+      ctx.moveTo(0, -36);
+      ctx.lineTo(26, -8);
+      ctx.lineTo(-26, -8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#1d0f35";
+      ctx.fillRect(-16, -8, 32, 16);
+    } else if (type === "dock") {
+      ctx.fillStyle = "#3b9bff";
+      ctx.fillRect(-46, -22, 92, 44);
+      ctx.fillStyle = "#92d8ff";
+      ctx.fillRect(-30, -10, 60, 20);
+      ctx.fillStyle = "#163f82";
+      ctx.fillRect(-8, -28, 16, 56);
+    } else if (type === "market") {
+      ctx.fillStyle = "#37d9ff";
+      ctx.fillRect(-40, -20, 80, 40);
+      ctx.fillStyle = "#b7fbff";
+      ctx.beginPath();
+      ctx.moveTo(-46, -6);
+      ctx.lineTo(46, -6);
+      ctx.lineTo(34, -26);
+      ctx.lineTo(-34, -26);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#1f4f82";
+      ctx.fillRect(-10, -2, 20, 18);
+    } else if (type === "hunter") {
+      ctx.fillStyle = "#ff7396";
+      ctx.fillRect(-42, -22, 84, 44);
+      ctx.fillStyle = "#ffd2e0";
+      ctx.beginPath();
+      ctx.moveTo(0, -34);
+      ctx.lineTo(22, -10);
+      ctx.lineTo(-22, -10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#732340";
+      ctx.fillRect(-6, -10, 12, 30);
+    } else if (type === "kraken") {
+      ctx.fillStyle = "rgba(159, 98, 255, 0.92)";
+      for (let i = 0; i < 6; i += 1) {
+        const angle = (Math.PI * 2 * i) / 6;
+        ctx.beginPath();
+        ctx.ellipse(Math.cos(angle) * 20, Math.sin(angle) * 20 + 16, 12, 26, angle * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#ab6eff";
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 32, 28, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f0d6ff";
+      ctx.beginPath();
+      ctx.arc(-10, -12, 4, 0, Math.PI * 2);
+      ctx.arc(10, -12, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#4e2f73";
+      ctx.fillRect(-10, -2, 20, 4);
     } else {
       ctx.fillStyle = fallbackColor;
-      ctx.fillRect(p.x - w / 2, p.y - h / 2, w, h);
+      ctx.fillRect(-50, -50, 100, 100);
     }
+    ctx.restore();
   }
 
   function drawBackground() {
@@ -596,6 +806,20 @@
     }
   }
 
+  function drawRaiders() {
+    for (const r of state.raiders) {
+      const p = worldToScreen(r.x, r.y);
+      ctx.fillStyle = "#ff73d7";
+      ctx.beginPath();
+      ctx.moveTo(p.x + 9, p.y);
+      ctx.lineTo(p.x - 8, p.y - 5);
+      ctx.lineTo(p.x - 8, p.y + 5);
+      ctx.closePath();
+      ctx.fill();
+      drawThought(r, r.thought, -24);
+    }
+  }
+
   function drawMerchants() {
     for (const m of state.merchants) {
       const p = worldToScreen(m.x, m.y);
@@ -638,6 +862,7 @@
     drawRoutes();
     drawBuildings();
     drawShips();
+    drawRaiders();
     drawMerchants();
     drawKrakens();
     drawHunters();
@@ -807,6 +1032,7 @@
     resizeCanvas();
     initEvents();
     if (!loadGame()) spawnInitialBuildings();
+    recordStatsHistory(0, true);
     if (state.timers.kraken <= 0) state.timers.kraken = rand(32, 55);
     updateConnectivity();
     setTab("build");

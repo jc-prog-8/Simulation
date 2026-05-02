@@ -6,7 +6,7 @@ Mobile-friendly browser management sim prototype built with HTML/CSS/JavaScript.
 
 Open `./index.html` in a browser.
 
-> Note: the game loads sprites from the provided external GitHub asset URL; if CORS blocks that URL in your environment, the game automatically falls back to simple vector shapes.
+> Note: the game uses in-code custom canvas sprites for all core entities.
 
 ### Controls
 
@@ -30,4 +30,4 @@ Open `./index.html` in a browser.
 - Full-screen paused menus for build/statistics and upgrades
 - Icon thought bubbles for ships/merchants/krakens/hunters/buildings
 - Local save/load via `localStorage`
-- Uses the provided sprite sheet URL for core entity rendering with fallback shapes
+- Uses custom canvas-rendered sprites for core entity rendering

@@ -85,6 +85,7 @@
   const placementHintEl = document.getElementById("placement-hint");
   const placementCancelEl = document.getElementById("placement-cancel");
   const spriteCache = new Map();
+  let spriteLoadFailed = false;
 
   const ui = { menuOpen: false, tab: "build", selected: null, placementMode: null, tickerIndex: 0, tickerTimer: 0, pointerWorld: { x: WORLD_W / 2, y: WORLD_H / 2 } };
 
@@ -129,7 +130,10 @@
             spriteCache.set(id, img);
             resolve();
           };
-          img.onerror = resolve;
+          img.onerror = () => {
+            spriteLoadFailed = true;
+            resolve();
+          };
           img.src = src;
         }),
       ),
@@ -1180,7 +1184,7 @@
     updateConnectivity();
     updatePlacementIndicator();
     setTab("build");
-    setTicker(TICKER_MESSAGES[0]);
+    setTicker(spriteLoadFailed ? "Some sprites failed to load. Gameplay is still available with fallbacks." : TICKER_MESSAGES[0]);
     requestAnimationFrame(loop);
   }
 

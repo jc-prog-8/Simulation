@@ -7,7 +7,7 @@
   const MAX_RENDER_DPR = 2;
   const UPGRADE_COST_MULTIPLIER = 1.8;
   const MAX_DELTA_TIME = 0.05;
-  const SPRITE_URL = "https://github.com/user-attachments/assets/34beca4b-c155-413e-9cbb-8121bd1b12b6";
+  const SPRITE_URL = "https://jc-prog-8.github.io/Simulation/sprites.png";
 
   const BUILDING_TYPES = {
     route: { id: "route", name: "Quantum Route Node", role: "Extends station network connectivity.", cost: 20, maxLevel: 1, radius: 12, connectable: true, color: "#38d7ff" },

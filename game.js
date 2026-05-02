@@ -11,10 +11,13 @@
   const UPGRADE_COST_MULTIPLIER = 1.8;
   const MAX_DELTA_TIME = 0.05;
   const THOUGHT_BUBBLE_SIZE = 50;
+  const THOUGHT_BUBBLE_FALLBACK_RADIUS = 18;
   const THOUGHT_FALLBACK_FONT = "bold 16px sans-serif";
   const SHIP_SPRITE_ROTATION = Math.PI / 2;
   const MERCHANT_WOBBLE_FREQUENCY = 0.002;
   const MERCHANT_WOBBLE_AMPLITUDE = 48;
+  const MERCHANT_SPAWN_X = -80;
+  const MERCHANT_SPAWN_MARGIN_Y = 160;
 
   const BUILDING_TYPES = {
     route: { id: "route", name: "Quantum Route Node", role: "Extends station network connectivity.", cost: 20, maxLevel: 1, radius: 12, connectable: true, color: "#38d7ff" },
@@ -34,6 +37,7 @@
     "Connected buildings glow brighter. Unpowered structures do nothing.",
     "Level 2 Pirate Bases can raid medium traffic.",
     "Merchants drift in from the left side and look for connected markets.",
+    "Merchants still flee stations with active Kraken sightings.",
     "Krakens also thin out traffic in nearby trade lanes.",
     "Trade Beacons attract extra merchants, but markets work without them.",
     "Monster Hunter Bases keep trade lanes calm.",
@@ -145,7 +149,8 @@
   }
 
   function getZoomLimits() {
-    const min = clamp(Math.min(window.innerWidth / (WORLD_W + WORLD_VIEW_MARGIN), window.innerHeight / (WORLD_H + WORLD_VIEW_MARGIN), 1), MIN_ZOOM, 1);
+    const viewportFitZoom = Math.min(window.innerWidth / (WORLD_W + WORLD_VIEW_MARGIN), window.innerHeight / (WORLD_H + WORLD_VIEW_MARGIN));
+    const min = clamp(Math.min(viewportFitZoom, 1), MIN_ZOOM, 1);
     return { min, max: MAX_ZOOM };
   }
 
@@ -437,8 +442,8 @@
     const target = markets[Math.floor(Math.random() * markets.length)];
     state.merchants.push({
       id: nextId("merchant"),
-      x: -80,
-      y: rand(160, WORLD_H - 160),
+      x: MERCHANT_SPAWN_X,
+      y: rand(MERCHANT_SPAWN_MARGIN_Y, WORLD_H - MERCHANT_SPAWN_MARGIN_Y),
       shopId: target.id,
       state: "seeking",
       speed: 44,
@@ -792,7 +797,7 @@
     }
     ctx.fillStyle = "#eaf6ff";
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 18, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, THOUGHT_BUBBLE_FALLBACK_RADIUS, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#1f3875";
     ctx.lineWidth = 2;

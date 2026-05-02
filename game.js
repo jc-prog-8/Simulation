@@ -83,7 +83,7 @@
   }
 
   function spawnInitialBuildings() {
-    state.buildings = [];
+    if (state.buildings.length) return;
   }
 
   function setTicker(msg) {

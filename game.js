@@ -481,10 +481,15 @@
 
     state.raiders = state.raiders.filter((r) => {
       const origin = state.buildings.find((b) => b.id === r.originId);
-      if (!origin) return false;
+      if (!origin) {
+        const target = state.ships.find((s) => s.id === r.targetId);
+        if (target) target.targeted = false;
+        return false;
+      }
       if (r.state === "toTarget") {
         const target = state.ships.find((s) => s.id === r.targetId);
         if (!target || target.raided) {
+          if (target) target.targeted = false;
           r.state = "return";
         } else {
           const dx = target.x - r.x;

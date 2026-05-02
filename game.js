@@ -5,13 +5,24 @@
   const TRAFFIC_X = 1800;
   const LINK_RANGE = 190;
   const MAX_RENDER_DPR = 2;
+  const MAX_ZOOM = 1.8;
+  const WORLD_VIEW_MARGIN = 120;
+  const MIN_ZOOM = 0.18;
   const UPGRADE_COST_MULTIPLIER = 1.8;
   const MAX_DELTA_TIME = 0.05;
+  const THOUGHT_BUBBLE_SIZE = 50;
+  const THOUGHT_BUBBLE_FALLBACK_RADIUS = 18;
+  const THOUGHT_FALLBACK_FONT = "bold 16px sans-serif";
+  const SHIP_SPRITE_ROTATION = Math.PI / 2;
+  const MERCHANT_WOBBLE_FREQUENCY = 0.002;
+  const MERCHANT_WOBBLE_AMPLITUDE = 48;
+  const MERCHANT_SPAWN_X = -80;
+  const MERCHANT_SPAWN_MARGIN_Y = 160;
 
   const BUILDING_TYPES = {
     route: { id: "route", name: "Quantum Route Node", role: "Extends station network connectivity.", cost: 20, maxLevel: 1, radius: 12, connectable: true, color: "#38d7ff" },
     pirate: { id: "pirate", name: "Pirate Base", role: "Auto-raids nearby traffic when connected.", cost: 120, maxLevel: 3, radius: 42, connectable: true, color: "#9143ff", upgradeCost: [0, 160, 330] },
-    dock: { id: "dock", name: "Dock Pad", role: "Merchants arrive and depart from here.", cost: 90, maxLevel: 2, radius: 46, connectable: true, color: "#2d8cff", upgradeCost: [0, 120] },
+    dock: { id: "dock", name: "Trade Beacon", role: "Attracts extra merchants to connected markets.", cost: 90, maxLevel: 2, radius: 46, connectable: true, color: "#2d8cff", upgradeCost: [0, 120] },
     market: { id: "market", name: "Market Stall", role: "Generates gold when merchants shop.", cost: 140, maxLevel: 3, radius: 36, connectable: true, color: "#52e0ff", upgradeCost: [0, 170, 360] },
     hunter: { id: "hunter", name: "Monster Hunter Base", role: "Dispatches hunters to remove Mecha-Krakens.", cost: 210, maxLevel: 3, radius: 42, connectable: true, color: "#ff6f8f", upgradeCost: [0, 240, 420] },
   };
@@ -25,11 +36,46 @@
   const TICKER_MESSAGES = [
     "Connected buildings glow brighter. Unpowered structures do nothing.",
     "Level 2 Pirate Bases can raid medium traffic.",
-    "Merchants avoid stations with active Kraken sightings.",
+    "Merchants drift in from the left side and look for connected markets.",
+    "Merchants still flee stations with active Kraken sightings.",
     "Krakens also thin out traffic in nearby trade lanes.",
-    "Build shops to earn gold from visitors, not just raids.",
+    "Trade Beacons attract extra merchants, but markets work without them.",
     "Monster Hunter Bases keep trade lanes calm.",
   ];
+
+  const SPRITE_FILES = {
+    shipSmall: "assets/sprites/ship-small.png",
+    shipMedium: "assets/sprites/ship-medium.png",
+    shipLarge: "assets/sprites/ship-large.png",
+    merchant: "assets/sprites/merchant.png",
+    pirate: "assets/sprites/pirate-base.png",
+    dock: "assets/sprites/trade-beacon.png",
+    market: "assets/sprites/market.png",
+    hunter: "assets/sprites/hunter-base.png",
+    route: "assets/sprites/route-node.png",
+    kraken: "assets/sprites/kraken.png",
+    bubbleAlert: "assets/sprites/bubble-alert.png",
+    bubbleWarning: "assets/sprites/bubble-warning.png",
+    bubbleMoney: "assets/sprites/bubble-money.png",
+    bubbleShield: "assets/sprites/bubble-shield.png",
+    bubbleQuestion: "assets/sprites/bubble-question.png",
+    bubbleTarget: "assets/sprites/bubble-target.png",
+    bubbleHappy: "assets/sprites/bubble-happy.png",
+    bubbleRunning: "assets/sprites/bubble-running.png",
+    bubbleSad: "assets/sprites/bubble-sad.png",
+  };
+
+  const THOUGHT_FALLBACK_TEXT = {
+    bubbleAlert: "!",
+    bubbleWarning: "!",
+    bubbleMoney: "$",
+    bubbleShield: "S",
+    bubbleQuestion: "?",
+    bubbleTarget: "X",
+    bubbleHappy: ":)",
+    bubbleRunning: ">",
+    bubbleSad: ":(",
+  };
 
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d");
@@ -41,10 +87,17 @@
   const buildOptionsEl = document.getElementById("build-options");
   const statsListEl = document.getElementById("stats-list");
   const statsGraphEl = document.getElementById("stats-graph");
+  const placementIndicatorEl = document.getElementById("placement-indicator");
+  const placementIconEl = document.getElementById("placement-icon");
+  const placementNameEl = document.getElementById("placement-name");
+  const placementHintEl = document.getElementById("placement-hint");
+  const placementCancelEl = document.getElementById("placement-cancel");
+  const spriteCache = new Map();
+  let spriteLoadFailed = false;
 
-  const ui = { menuOpen: false, tab: "build", selected: null, placementMode: null, tickerIndex: 0, tickerTimer: 0 };
+  const ui = { menuOpen: false, tab: "build", selected: null, placementMode: null, tickerIndex: 0, tickerTimer: 0, pointerWorld: { x: WORLD_W / 2, y: WORLD_H / 2 } };
 
-  const state = {
+  const createInitialState = () => ({
     gold: 420,
     buildings: [],
     ships: [],
@@ -56,7 +109,9 @@
     statsHistory: [],
     elapsed: 0,
     timers: { ship: 0, merchant: 0, kraken: 0, save: 0 },
-  };
+  });
+
+  const state = createInitialState();
 
   const camera = { x: 0, y: 0, zoom: 1, dragging: false, dragStartX: 0, dragStartY: 0, startX: 0, startY: 0 };
   const touchState = { pointers: new Map(), pinchStartDist: 0, pinchStartZoom: 1 };
@@ -72,6 +127,93 @@
   const screenToWorld = (x, y) => ({ x: x / camera.zoom + camera.x, y: y / camera.zoom + camera.y });
   const isPaused = () => ui.menuOpen || !upgradeOverlay.classList.contains("hidden");
   const activeBuildings = (type) => state.buildings.filter((b) => b.type === type && b.connected);
+  const getSprite = (id) => spriteCache.get(id) || null;
+
+  function preloadSprites() {
+    return Promise.all(
+      Object.entries(SPRITE_FILES).map(([id, src]) =>
+        new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            spriteCache.set(id, img);
+            resolve();
+          };
+          img.onerror = () => {
+            spriteLoadFailed = true;
+            resolve();
+          };
+          img.src = src;
+        }),
+      ),
+    );
+  }
+
+  function getZoomLimits() {
+    const viewportFitZoom = Math.min(window.innerWidth / (WORLD_W + WORLD_VIEW_MARGIN), window.innerHeight / (WORLD_H + WORLD_VIEW_MARGIN));
+    const min = clamp(Math.min(viewportFitZoom, 1), MIN_ZOOM, 1);
+    return { min, max: MAX_ZOOM };
+  }
+
+  function clampCamera() {
+    const { min, max } = getZoomLimits();
+    camera.zoom = clamp(camera.zoom, min, max);
+    const maxX = Math.max(0, WORLD_W - window.innerWidth / camera.zoom);
+    const maxY = Math.max(0, WORLD_H - window.innerHeight / camera.zoom);
+    camera.x = clamp(camera.x, 0, maxX);
+    camera.y = clamp(camera.y, 0, maxY);
+  }
+
+  function setDefaultCamera() {
+    camera.zoom = getZoomLimits().min;
+    camera.x = Math.max(0, (WORLD_W - window.innerWidth / camera.zoom) / 2);
+    camera.y = Math.max(0, (WORLD_H - window.innerHeight / camera.zoom) / 2);
+    clampCamera();
+  }
+
+  function spriteIdForBuilding(typeId) {
+    if (typeId === "route") return "route";
+    if (typeId === "pirate") return "pirate";
+    if (typeId === "dock") return "dock";
+    if (typeId === "market") return "market";
+    if (typeId === "hunter") return "hunter";
+    return null;
+  }
+
+  function updatePlacementIndicator() {
+    const typeId = ui.placementMode;
+    const def = typeId ? BUILDING_TYPES[typeId] : null;
+    placementIndicatorEl.classList.toggle("hidden", !def);
+    if (!def) return;
+    placementNameEl.textContent = `${def.name} ready`;
+    placementHintEl.textContent = "Tap open space to place it, or tap a structure to inspect and upgrade it.";
+    const spriteId = spriteIdForBuilding(typeId);
+    placementIconEl.src = spriteId ? SPRITE_FILES[spriteId] : "";
+  }
+
+  function setPlacementMode(typeId) {
+    ui.placementMode = typeId;
+    updatePlacementIndicator();
+  }
+
+  function clearPlacementMode() {
+    ui.placementMode = null;
+    updatePlacementIndicator();
+  }
+
+  function resetGame(preserveMenu = false) {
+    const fresh = createInitialState();
+    Object.assign(state, fresh);
+    idSeq = 1;
+    ui.selected = null;
+    clearPlacementMode();
+    if (!preserveMenu) closeMenu();
+    closeUpgrade();
+    setDefaultCamera();
+    state.timers.kraken = rand(32, 55);
+    updateConnectivity();
+    recordStatsHistory(0, true);
+    localStorage.removeItem(SAVE_KEY);
+  }
 
   function resizeCanvas() {
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
@@ -80,6 +222,7 @@
     canvas.style.width = `${window.innerWidth}px`;
     canvas.style.height = `${window.innerHeight}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    clampCamera();
   }
 
   function spawnInitialBuildings() {
@@ -140,7 +283,7 @@
       btn.className = "build-btn";
       btn.innerHTML = `<strong>${def.name}</strong><br>${def.role}<span class="cost">Cost: ${def.cost}</span>`;
       btn.addEventListener("click", () => {
-        ui.placementMode = def.id;
+        setPlacementMode(def.id);
         closeMenu();
         setTicker(`Tap valid space to place ${def.name}.`);
       });
@@ -294,22 +437,23 @@
   }
 
   function spawnMerchant() {
-    const docks = activeBuildings("dock");
     const markets = activeBuildings("market");
-    if (!docks.length || !markets.length) return;
-    const dock = docks[Math.floor(Math.random() * docks.length)];
+    if (!markets.length) return;
     const target = markets[Math.floor(Math.random() * markets.length)];
     state.merchants.push({
       id: nextId("merchant"),
-      x: dock.x,
-      y: dock.y,
-      homeDockId: dock.id,
+      x: MERCHANT_SPAWN_X,
+      y: rand(MERCHANT_SPAWN_MARGIN_Y, WORLD_H - MERCHANT_SPAWN_MARGIN_Y),
       shopId: target.id,
-      state: "toShop",
-      speed: 48,
+      state: "seeking",
+      speed: 44,
       timer: 0,
-      thought: "💳",
-      thoughtTimer: 0.8,
+      heading: 0,
+      wanderPhase: rand(0, Math.PI * 2),
+      retargetTimer: rand(1.2, 2.6),
+      exitY: null,
+      thought: "bubbleQuestion",
+      thoughtTimer: 1.2,
     });
   }
 
@@ -322,7 +466,7 @@
       vy: rand(-16, 16),
       radius: 240,
       ttl: rand(26, 38),
-      thought: "🐙",
+      thought: "bubbleAlert",
       thoughtTimer: 1000,
     });
     state.stats.krakenIncidents += 1;
@@ -337,7 +481,7 @@
       y: base.y,
       targetId: target.id,
       speed: 140 + base.level * 28,
-      thought: "🎯",
+      thought: "bubbleTarget",
       thoughtTimer: 1000,
     });
   }
@@ -415,10 +559,10 @@
     }
     if (!candidate) return;
     candidate.targeted = true;
-    candidate.thought = "❗";
+    candidate.thought = "bubbleAlert";
     candidate.thoughtTimer = 0.8;
     base.cooldown = pirateCooldown(base);
-    base.thought = "⚡";
+    base.thought = "bubbleWarning";
     base.thoughtTimer = 0.7;
     state.raiders.push({
       id: nextId("raider"),
@@ -429,7 +573,7 @@
       speed: 180 + base.level * 26,
       reward: candidate.reward + (base.level - 1) * 5,
       state: "toTarget",
-      thought: "☠",
+      thought: "bubbleAlert",
       thoughtTimer: 0.8,
     });
   }
@@ -449,11 +593,11 @@
     }
 
     state.timers.merchant -= dt;
-    const dockCount = activeBuildings("dock").length;
     const marketCount = activeBuildings("market").length;
-    if (state.timers.merchant <= 0 && dockCount && marketCount) {
+    const beaconCount = activeBuildings("dock").length;
+    if (state.timers.merchant <= 0 && marketCount) {
       if (Math.random() < clamp(0.8 - state.krakens.length * 0.18, 0.2, 0.9)) spawnMerchant();
-      state.timers.merchant = clamp(8 - marketCount * 0.6, 3.5, 8.5);
+      state.timers.merchant = clamp(8 - marketCount * 0.45 - beaconCount * 0.65, 2.6, 8.5);
     }
 
     state.timers.kraken -= dt;
@@ -467,7 +611,7 @@
       if (ship.thoughtTimer > 0) ship.thoughtTimer -= dt;
       if (ship.thoughtTimer <= 0) ship.thought = null;
       if (krakenNear(ship, 220) && Math.random() < 0.007) {
-        ship.thought = "⚠";
+        ship.thought = "bubbleWarning";
         ship.thoughtTimer = 0.8;
       }
       if (ship.y > WORLD_H + 80) {
@@ -500,13 +644,13 @@
           if (d < 20) {
             target.raided = true;
             target.targeted = false;
-            target.thought = "☠";
+            target.thought = "bubbleWarning";
             target.thoughtTimer = 0.8;
             state.gold += r.reward;
             state.stats.raidGold += r.reward;
             state.stats.raids += 1;
             r.state = "return";
-            r.thought = "💰";
+            r.thought = "bubbleMoney";
             r.thoughtTimer = 0.7;
           }
         }
@@ -566,27 +710,44 @@
 
     state.merchants = state.merchants.filter((m) => {
       const shop = state.buildings.find((b) => b.id === m.shopId);
-      const dock = state.buildings.find((b) => b.id === m.homeDockId);
-      if (!shop || !dock || !shop.connected || !dock.connected) return false;
+      const markets = activeBuildings("market");
+      let activeShop = shop && shop.connected ? shop : null;
+      if (!activeShop) {
+        if (!markets.length) return false;
+        m.shopId = markets[Math.floor(Math.random() * markets.length)].id;
+        activeShop = state.buildings.find((b) => b.id === m.shopId) || null;
+      }
       if (krakenNear(m, 230) && m.state !== "flee") {
         m.state = "flee";
-        m.thought = "😱";
+        m.thought = "bubbleRunning";
         m.thoughtTimer = 1.3;
         state.stats.merchantFlee += 1;
       }
       let target = null;
-      if (m.state === "toShop") target = shop;
-      if (m.state === "leaving") target = dock;
-      if (m.state === "flee") target = { x: 260, y: m.y - 120 };
+      if (m.state === "seeking") {
+        m.retargetTimer -= dt;
+        if (m.retargetTimer <= 0 && markets.length) {
+          const nextShop = markets[Math.floor(Math.random() * markets.length)];
+          m.shopId = nextShop.id;
+          activeShop = nextShop;
+          m.retargetTimer = rand(1.2, 2.6);
+        }
+        if (!activeShop) return false;
+        const wobble = Math.sin(performance.now() * MERCHANT_WOBBLE_FREQUENCY + m.wanderPhase) * MERCHANT_WOBBLE_AMPLITUDE;
+        target = { x: activeShop.x, y: activeShop.y + wobble };
+      }
+      if (m.state === "leaving") target = { x: WORLD_W + 120, y: m.exitY };
+      if (m.state === "flee") target = { x: -140, y: clamp(m.y - 120, 80, WORLD_H - 80) };
       if (m.state === "shopping") {
         m.timer -= dt;
         if (m.timer <= 0) {
-          const spend = 18 + shop.level * 14;
+          const spend = 18 + activeShop.level * 14;
           state.gold += spend;
           state.stats.merchantGold += spend;
           state.stats.merchantVisits += 1;
           m.state = "leaving";
-          m.thought = "💰";
+          m.exitY = clamp(m.y + rand(-90, 90), 90, WORLD_H - 90);
+          m.thought = "bubbleMoney";
           m.thoughtTimer = 1;
         }
       } else {
@@ -595,11 +756,12 @@
         const d = Math.hypot(dx, dy) || 1;
         m.x += (dx / d) * m.speed * dt;
         m.y += (dy / d) * m.speed * dt;
+        m.heading = Math.atan2(dy, dx);
         if (d < 18) {
-          if (m.state === "toShop") {
+          if (m.state === "seeking") {
             m.state = "shopping";
             m.timer = 2.2;
-            m.thought = "🛍";
+            m.thought = "bubbleHappy";
             m.thoughtTimer = 1;
           } else if (m.state === "leaving" || m.state === "flee") {
             return false;
@@ -608,7 +770,7 @@
       }
       if (m.thoughtTimer > 0) m.thoughtTimer -= dt;
       if (m.thoughtTimer <= 0 && m.state !== "shopping") m.thought = null;
-      return true;
+      return m.x < WORLD_W + 160 && m.y > -180 && m.y < WORLD_H + 180;
     });
 
     state.timers.save -= dt;
@@ -622,110 +784,75 @@
   function drawThought(entity, icon, yOffset = -42) {
     if (!icon) return;
     const p = worldToScreen(entity.x, entity.y + yOffset);
+    const img = getSprite(icon);
+    if (img) {
+      const scale = THOUGHT_BUBBLE_SIZE / img.height;
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, p.x - w / 2, p.y - h / 2, w, h);
+      ctx.restore();
+      return;
+    }
     ctx.fillStyle = "#eaf6ff";
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 13, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, THOUGHT_BUBBLE_FALLBACK_RADIUS, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#1f3875";
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = "#0f1d45";
-    ctx.font = "14px sans-serif";
+    ctx.font = THOUGHT_FALLBACK_FONT;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(icon, p.x, p.y + 0.5);
+    ctx.fillText(THOUGHT_FALLBACK_TEXT[icon] || "!", p.x, p.y + 0.5);
   }
 
-  function drawSpriteOrFallback(type, x, y, w, h, fallbackColor) {
+  function drawSpriteOrFallback(type, x, y, w, h, fallbackColor, rotation = 0, alpha = 1) {
+    const spriteId =
+      type === "shipSmall"
+        ? "shipSmall"
+        : type === "shipMedium"
+          ? "shipMedium"
+          : type === "shipLarge"
+            ? "shipLarge"
+            : type;
+    const img = getSprite(spriteId);
+    if (img) {
+      const p = worldToScreen(x, y);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(rotation);
+      ctx.globalAlpha *= alpha;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      return;
+    }
+
     const p = worldToScreen(x, y);
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.scale(w / 100, h / 100);
-
-    if (type === "shipSmall" || type === "shipMedium" || type === "shipLarge") {
-      const hullColor = type === "shipSmall" ? "#5aa8ff" : type === "shipMedium" ? "#9e74ff" : "#ffc86c";
-      ctx.fillStyle = hullColor;
+    ctx.rotate(rotation);
+    ctx.globalAlpha *= alpha;
+    if (type === "route") {
+      ctx.strokeStyle = fallbackColor;
+      ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.moveTo(44, -26);
-      ctx.lineTo(-40, -18);
-      ctx.lineTo(-48, 0);
-      ctx.lineTo(-40, 18);
-      ctx.lineTo(44, 26);
-      ctx.lineTo(50, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "rgba(238, 248, 255, 0.9)";
+      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.beginPath();
-      ctx.ellipse(10, 0, 14, 9, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(70, 20, 110, 0.35)";
-      ctx.fillRect(-28, -3, 30, 6);
-    } else if (type === "pirate") {
-      ctx.fillStyle = "#8e43ff";
-      ctx.fillRect(-42, -24, 84, 48);
-      ctx.fillStyle = "#d9a3ff";
-      ctx.beginPath();
-      ctx.moveTo(0, -36);
-      ctx.lineTo(26, -8);
-      ctx.lineTo(-26, -8);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#1d0f35";
-      ctx.fillRect(-16, -8, 32, 16);
-    } else if (type === "dock") {
-      ctx.fillStyle = "#3b9bff";
-      ctx.fillRect(-46, -22, 92, 44);
-      ctx.fillStyle = "#92d8ff";
-      ctx.fillRect(-30, -10, 60, 20);
-      ctx.fillStyle = "#163f82";
-      ctx.fillRect(-8, -28, 16, 56);
-    } else if (type === "market") {
-      ctx.fillStyle = "#37d9ff";
-      ctx.fillRect(-40, -20, 80, 40);
-      ctx.fillStyle = "#b7fbff";
-      ctx.beginPath();
-      ctx.moveTo(-46, -6);
-      ctx.lineTo(46, -6);
-      ctx.lineTo(34, -26);
-      ctx.lineTo(-34, -26);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#1f4f82";
-      ctx.fillRect(-10, -2, 20, 18);
-    } else if (type === "hunter") {
-      ctx.fillStyle = "#ff7396";
-      ctx.fillRect(-42, -22, 84, 44);
-      ctx.fillStyle = "#ffd2e0";
-      ctx.beginPath();
-      ctx.moveTo(0, -34);
-      ctx.lineTo(22, -10);
-      ctx.lineTo(-22, -10);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#732340";
-      ctx.fillRect(-6, -10, 12, 30);
-    } else if (type === "kraken") {
-      ctx.fillStyle = "rgba(159, 98, 255, 0.92)";
-      for (let i = 0; i < 6; i += 1) {
-        const angle = (Math.PI * 2 * i) / 6;
-        ctx.beginPath();
-        ctx.ellipse(Math.cos(angle) * 20, Math.sin(angle) * 20 + 16, 12, 26, angle * 0.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = "#ab6eff";
-      ctx.beginPath();
-      ctx.ellipse(0, -8, 32, 28, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#f0d6ff";
-      ctx.beginPath();
-      ctx.arc(-10, -12, 4, 0, Math.PI * 2);
-      ctx.arc(10, -12, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#4e2f73";
-      ctx.fillRect(-10, -2, 20, 4);
+      ctx.moveTo(-18, 0);
+      ctx.lineTo(18, 0);
+      ctx.moveTo(0, -18);
+      ctx.lineTo(0, 18);
+      ctx.stroke();
     } else {
       ctx.fillStyle = fallbackColor;
-      ctx.fillRect(-50, -50, 100, 100);
+      ctx.beginPath();
+      ctx.roundRect(-w / 2, -h / 2, w, h, 12);
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -776,16 +903,11 @@
       const def = BUILDING_TYPES[b.type];
       const p = worldToScreen(b.x, b.y);
       ctx.globalAlpha = b.connected ? 1 : 0.42;
-      if (b.type === "pirate") drawSpriteOrFallback("pirate", b.x, b.y, 72, 54, def.color);
-      else if (b.type === "dock") drawSpriteOrFallback("dock", b.x, b.y, 78, 56, def.color);
-      else if (b.type === "market") drawSpriteOrFallback("market", b.x, b.y, 66, 56, def.color);
-      else if (b.type === "hunter") drawSpriteOrFallback("hunter", b.x, b.y, 76, 56, def.color);
-      else {
-        ctx.fillStyle = "#2ec8ff";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, def.radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      if (b.type === "pirate") drawSpriteOrFallback("pirate", b.x, b.y, 88, 72, def.color);
+      else if (b.type === "dock") drawSpriteOrFallback("dock", b.x, b.y, 104, 78, def.color);
+      else if (b.type === "market") drawSpriteOrFallback("market", b.x, b.y, 84, 70, def.color);
+      else if (b.type === "hunter") drawSpriteOrFallback("hunter", b.x, b.y, 92, 68, def.color);
+      else drawSpriteOrFallback("route", b.x, b.y, 42, 42, def.color);
       ctx.globalAlpha = 1;
       if (b.type === "pirate") {
         ctx.strokeStyle = "rgba(157,121,255,0.22)";
@@ -799,9 +921,9 @@
 
   function drawShips() {
     for (const s of state.ships) {
-      if (s.classId === "small") drawSpriteOrFallback("shipSmall", s.x, s.y, 52, 30, "#76b6ff");
-      if (s.classId === "medium") drawSpriteOrFallback("shipMedium", s.x, s.y, 68, 36, "#ba8cff");
-      if (s.classId === "large") drawSpriteOrFallback("shipLarge", s.x, s.y, 86, 42, "#ffd176");
+      if (s.classId === "small") drawSpriteOrFallback("shipSmall", s.x, s.y, 58, 36, "#76b6ff", SHIP_SPRITE_ROTATION);
+      if (s.classId === "medium") drawSpriteOrFallback("shipMedium", s.x, s.y, 76, 44, "#ba8cff", SHIP_SPRITE_ROTATION);
+      if (s.classId === "large") drawSpriteOrFallback("shipLarge", s.x, s.y, 92, 52, "#ffd176", SHIP_SPRITE_ROTATION);
       drawThought(s, s.thought, -28);
     }
   }
@@ -822,39 +944,52 @@
 
   function drawMerchants() {
     for (const m of state.merchants) {
-      const p = worldToScreen(m.x, m.y);
-      ctx.fillStyle = "#d0f5ff";
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-      ctx.fill();
+      drawSpriteOrFallback("merchant", m.x, m.y, 64, 34, "#d0f5ff", m.heading || 0);
       drawThought(m, m.thought, -26);
     }
   }
 
   function drawKrakens() {
     for (const k of state.krakens) {
-      drawSpriteOrFallback("kraken", k.x, k.y, 124, 118, "#9a60ff");
+      drawSpriteOrFallback("kraken", k.x, k.y, 166, 126, "#9a60ff");
       const p = worldToScreen(k.x, k.y);
       ctx.strokeStyle = "rgba(255,82,131,0.17)";
       ctx.beginPath();
       ctx.arc(p.x, p.y, k.radius * camera.zoom, 0, Math.PI * 2);
       ctx.stroke();
-      drawThought(k, "⚠", -66);
+      drawThought(k, k.thought || "bubbleWarning", -72);
     }
   }
 
   function drawHunters() {
     for (const h of state.hunters) {
-      const p = worldToScreen(h.x, h.y);
-      ctx.fillStyle = "#63f8ff";
-      ctx.beginPath();
-      ctx.moveTo(p.x + 10, p.y);
-      ctx.lineTo(p.x - 8, p.y - 6);
-      ctx.lineTo(p.x - 8, p.y + 6);
-      ctx.closePath();
-      ctx.fill();
+      const target = state.krakens.find((k) => k.id === h.targetId);
+      const heading = target ? Math.atan2(target.y - h.y, target.x - h.x) : 0;
+      drawSpriteOrFallback("shipSmall", h.x, h.y, 48, 28, "#63f8ff", heading);
       drawThought(h, h.thought, -26);
     }
+  }
+
+  function drawPlacementPreview() {
+    if (!ui.placementMode) return;
+    const def = BUILDING_TYPES[ui.placementMode];
+    const x = snap(clamp(ui.pointerWorld.x, 40, WORLD_W - 40));
+    const y = snap(clamp(ui.pointerWorld.y, 40, WORLD_H - 40));
+    const p = worldToScreen(x, y);
+    ctx.save();
+    ctx.strokeStyle = "rgba(38, 210, 255, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(22, def.radius * camera.zoom + 6), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    if (ui.placementMode === "pirate") drawSpriteOrFallback("pirate", x, y, 88, 72, def.color, 0, 0.72);
+    else if (ui.placementMode === "dock") drawSpriteOrFallback("dock", x, y, 104, 78, def.color, 0, 0.72);
+    else if (ui.placementMode === "market") drawSpriteOrFallback("market", x, y, 84, 70, def.color, 0, 0.72);
+    else if (ui.placementMode === "hunter") drawSpriteOrFallback("hunter", x, y, 92, 68, def.color, 0, 0.72);
+    else drawSpriteOrFallback("route", x, y, 42, 42, def.color, 0, 0.72);
   }
 
   function render() {
@@ -866,12 +1001,7 @@
     drawMerchants();
     drawKrakens();
     drawHunters();
-    if (ui.placementMode) {
-      ctx.fillStyle = "rgba(38, 210, 255, 0.9)";
-      ctx.font = "13px sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText(`Placement: ${BUILDING_TYPES[ui.placementMode].name}`, 14, 28);
-    }
+    drawPlacementPreview();
     if (isPaused()) {
       ctx.fillStyle = "rgba(8, 14, 36, 0.24)";
       ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
@@ -893,18 +1023,27 @@
   }
 
   function handleTap(worldX, worldY) {
-    if (ui.placementMode) {
-      const ok = placeBuilding(ui.placementMode, worldX, worldY, false);
-      if (ok) setTicker(`${BUILDING_TYPES[ui.placementMode].name} constructed.`);
+    const b = pickBuildingAt(worldX, worldY);
+    if (b) {
+      clearPlacementMode();
+      openUpgrade(b);
       return;
     }
-    const b = pickBuildingAt(worldX, worldY);
-    if (b) openUpgrade(b);
+    if (ui.placementMode) {
+      const ok = placeBuilding(ui.placementMode, worldX, worldY, false);
+      if (ok) {
+        const builtName = BUILDING_TYPES[ui.placementMode].name;
+        clearPlacementMode();
+        setTicker(`${builtName} constructed.`);
+      }
+      return;
+    }
   }
 
   function onPointerDown(e) {
     canvas.setPointerCapture(e.pointerId);
     touchState.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: false });
+    ui.pointerWorld = pointerToWorld(e);
     if (touchState.pointers.size === 1) {
       camera.dragging = true;
       camera.dragStartX = e.clientX;
@@ -923,23 +1062,27 @@
     if (!p) return;
     p.x = e.clientX;
     p.y = e.clientY;
+    ui.pointerWorld = pointerToWorld(e);
     if (touchState.pointers.size === 2) {
       const pts = [...touchState.pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      if (touchState.pinchStartDist > 0) camera.zoom = clamp((d / touchState.pinchStartDist) * touchState.pinchStartZoom, 0.65, 1.8);
+      if (touchState.pinchStartDist > 0) camera.zoom = clamp((d / touchState.pinchStartDist) * touchState.pinchStartZoom, getZoomLimits().min, getZoomLimits().max);
+      clampCamera();
       return;
     }
     if (!camera.dragging) return;
     const dx = (e.clientX - camera.dragStartX) / camera.zoom;
     const dy = (e.clientY - camera.dragStartY) / camera.zoom;
-    camera.x = clamp(camera.startX - dx, 0, WORLD_W - window.innerWidth / camera.zoom);
-    camera.y = clamp(camera.startY - dy, 0, WORLD_H - window.innerHeight / camera.zoom);
+    camera.x = camera.startX - dx;
+    camera.y = camera.startY - dy;
+    clampCamera();
     if (Math.abs(dx) + Math.abs(dy) > 8) p.moved = true;
   }
 
   function onPointerUp(e) {
     const p = touchState.pointers.get(e.pointerId);
     if (!p) return;
+    ui.pointerWorld = pointerToWorld(e);
     if (!p.moved && touchState.pointers.size <= 2 && !isPaused()) {
       const w = pointerToWorld(e);
       handleTap(w.x, w.y);
@@ -951,14 +1094,16 @@
   function onWheel(e) {
     e.preventDefault();
     const old = camera.zoom;
-    camera.zoom = clamp(camera.zoom - Math.sign(e.deltaY) * 0.08, 0.65, 1.8);
+    const { min, max } = getZoomLimits();
+    camera.zoom = clamp(camera.zoom - Math.sign(e.deltaY) * 0.08, min, max);
     const rect = canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
     const wx = sx / old + camera.x;
     const wy = sy / old + camera.y;
-    camera.x = clamp(wx - sx / camera.zoom, 0, WORLD_W - window.innerWidth / camera.zoom);
-    camera.y = clamp(wy - sy / camera.zoom, 0, WORLD_H - window.innerHeight / camera.zoom);
+    camera.x = wx - sx / camera.zoom;
+    camera.y = wy - sy / camera.zoom;
+    clampCamera();
   }
 
   function saveGame() {
@@ -987,6 +1132,7 @@
       camera.y = data.camera?.y ?? camera.y;
       camera.zoom = data.camera?.zoom ?? camera.zoom;
       idSeq = data.idSeq ?? idSeq;
+      clampCamera();
       updateConnectivity();
       return true;
     } catch {
@@ -1016,29 +1162,40 @@
     menuBtn.addEventListener("click", openMenu);
     document.querySelectorAll(".tab-btn").forEach((btn) => btn.addEventListener("click", () => setTab(btn.dataset.tab)));
     document.getElementById("close-menu").addEventListener("click", closeMenu);
-    document.getElementById("close-menu-2").addEventListener("click", closeMenu);
     document.getElementById("upgrade-close").addEventListener("click", closeUpgrade);
     document.getElementById("upgrade-buy").addEventListener("click", upgradeSelected);
+    placementCancelEl.addEventListener("click", clearPlacementMode);
+    document.getElementById("reset-game").addEventListener("click", () => {
+      if (!window.confirm("Start a new game? This clears the current save.")) return;
+      resetGame(true);
+      setTicker("Fresh sector ready. Build a network and start raiding.");
+      renderStats();
+      saveGame();
+    });
     window.addEventListener("beforeunload", saveGame);
     window.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       if (!upgradeOverlay.classList.contains("hidden")) return closeUpgrade();
       if (ui.menuOpen) return closeMenu();
-      ui.placementMode = null;
+      clearPlacementMode();
     });
   }
 
   function initializeGame() {
     resizeCanvas();
     initEvents();
-    if (!loadGame()) spawnInitialBuildings();
+    if (!loadGame()) {
+      spawnInitialBuildings();
+      setDefaultCamera();
+    }
     recordStatsHistory(0, true);
     if (state.timers.kraken <= 0) state.timers.kraken = rand(32, 55);
     updateConnectivity();
+    updatePlacementIndicator();
     setTab("build");
-    setTicker(TICKER_MESSAGES[0]);
+    setTicker(spriteLoadFailed ? "Some sprites failed to load. Gameplay is still available with fallbacks." : TICKER_MESSAGES[0]);
     requestAnimationFrame(loop);
   }
 
-  initializeGame();
+  preloadSprites().finally(initializeGame);
 })();

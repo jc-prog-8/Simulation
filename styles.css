@@ -1,0 +1,174 @@
+:root {
+  color-scheme: dark;
+  --panel: rgba(8, 16, 43, 0.86);
+  --edge: #3f5fb8;
+  --accent: #26d2ff;
+  --text: #e7f2ff;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#game-root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at 65% 60%, #3a2a72 0, #0c1636 40%, #070b1a 100%);
+  color: var(--text);
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.panel {
+  position: absolute;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 0 10px #0009;
+}
+
+#hud-top-right {
+  right: 10px;
+  top: 10px;
+  padding: 8px 12px;
+  font-size: 18px;
+  min-width: 120px;
+  text-align: right;
+}
+
+#hud-top-right .label {
+  display: block;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+#gold-value {
+  color: #ffd548;
+  font-weight: 700;
+}
+
+#ticker {
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+}
+
+.ring-button {
+  position: absolute;
+  left: 12px;
+  bottom: 66px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  background: radial-gradient(circle, #1f2d6d 0%, #070c25 70%);
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 24, 0.93);
+  z-index: 9;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+}
+
+.overlay-inner {
+  width: min(760px, 100%);
+  height: min(92vh, 920px);
+  border: 1px solid #3f5db8;
+  border-radius: 14px;
+  background: #081437;
+  padding: 14px;
+  overflow: auto;
+}
+
+.menu-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tab-btn,
+.close-btn,
+#upgrade-buy,
+#upgrade-close,
+.build-btn {
+  border-radius: 10px;
+  border: 1px solid #476bd3;
+  color: #def;
+  background: #182b62;
+  padding: 10px;
+  font-size: 15px;
+}
+
+.tab-btn.active {
+  background: #2343a3;
+  border-color: #58c4ff;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.build-btn {
+  text-align: left;
+}
+
+.build-btn .cost {
+  color: #ffd548;
+  display: block;
+  margin-top: 4px;
+}
+
+#stats-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+#stats-list li {
+  background: #112255;
+  border: 1px solid #3c5eb5;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.upgrade-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.hidden {
+  display: none;
+}

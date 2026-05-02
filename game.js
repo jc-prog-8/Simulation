@@ -6,11 +6,15 @@
   const LINK_RANGE = 190;
   const MAX_RENDER_DPR = 2;
   const MAX_ZOOM = 1.8;
+  const WORLD_VIEW_MARGIN = 120;
+  const MIN_ZOOM = 0.18;
   const UPGRADE_COST_MULTIPLIER = 1.8;
   const MAX_DELTA_TIME = 0.05;
   const THOUGHT_BUBBLE_SIZE = 50;
   const THOUGHT_FALLBACK_FONT = "bold 16px sans-serif";
   const SHIP_SPRITE_ROTATION = Math.PI / 2;
+  const MERCHANT_WOBBLE_FREQUENCY = 0.002;
+  const MERCHANT_WOBBLE_AMPLITUDE = 48;
 
   const BUILDING_TYPES = {
     route: { id: "route", name: "Quantum Route Node", role: "Extends station network connectivity.", cost: 20, maxLevel: 1, radius: 12, connectable: true, color: "#38d7ff" },
@@ -141,7 +145,7 @@
   }
 
   function getZoomLimits() {
-    const min = clamp(Math.min(window.innerWidth / (WORLD_W + 120), window.innerHeight / (WORLD_H + 120), 1), 0.18, 1);
+    const min = clamp(Math.min(window.innerWidth / (WORLD_W + WORLD_VIEW_MARGIN), window.innerHeight / (WORLD_H + WORLD_VIEW_MARGIN), 1), MIN_ZOOM, 1);
     return { min, max: MAX_ZOOM };
   }
 
@@ -724,7 +728,7 @@
           m.retargetTimer = rand(1.2, 2.6);
         }
         if (!activeShop) return false;
-        const wobble = Math.sin(performance.now() * 0.002 + m.wanderPhase) * 48;
+        const wobble = Math.sin(performance.now() * MERCHANT_WOBBLE_FREQUENCY + m.wanderPhase) * MERCHANT_WOBBLE_AMPLITUDE;
         target = { x: activeShop.x, y: activeShop.y + wobble };
       }
       if (m.state === "leaving") target = { x: WORLD_W + 120, y: m.exitY };
